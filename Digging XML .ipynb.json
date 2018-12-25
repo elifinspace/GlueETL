@@ -1,0 +1,378 @@
+{
+ "cells": [
+  {
+   "cell_type": "code",
+   "execution_count": 26,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "import sys\n",
+    "from awsglue.transforms import *\n",
+    "from awsglue.utils import getResolvedOptions\n",
+    "from pyspark.context import SparkContext\n",
+    "from awsglue.context import GlueContext\n",
+    "# from awsglue.job import Job\n",
+    "\n",
+    "## Additional Lib\n",
+    "from pyspark.sql.functions import *\n",
+    "from awsglue.dynamicframe import DynamicFrame\n",
+    "##\n",
+    "\n",
+    "\n",
+    "# ## @params: [JOB_NAME]\n",
+    "# args = getResolvedOptions(sys.argv, ['JOB_NAME'])\n",
+    "\n",
+    "# sc = SparkContext()\n",
+    "glueContext = GlueContext(SparkContext.getOrCreate())\n",
+    "spark = glueContext.spark_session\n",
+    "# job = Job(glueContext)\n",
+    "# job.init(args['JOB_NAME'], args)\n",
+    "## @type: DataSource\n",
+    "## @args: [database = \"default\", table_name = \"donuts_xml\", transformation_ctx = \"datasource0\"]\n",
+    "## @return: datasource0\n",
+    "## @inputs: []\n",
+    "datasource0 = glueContext.create_dynamic_frame.from_catalog(database = \"default\",\n",
+    "                                                            table_name = \"donuts_xml\",\n",
+    "                                                            transformation_ctx = \"datasource0\")\n"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 2,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "s3_path = \"s3://aws-glue-elif-test/donuts.xml\"\n",
+    "d0 = glueContext.create_dynamic_frame.from_options(\"s3\",\n",
+    "                                                   {'paths': [s3_path] },\n",
+    "                                                   format=\"xml\",\n",
+    "                                                   format_options={\"rowTag\":\"item\"},transformation_ctx = \"d0\")"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 23,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "spark_df = spark.read.format(\"com.databricks.spark.xml\").options(rowTag=\"item\").options(nullValue=\"\").load(s3_path)"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 24,
+   "metadata": {},
+   "outputs": [
+    {
+     "name": "stdout",
+     "output_type": "stream",
+     "text": [
+      "root\n",
+      " |-- _id: long (nullable = true)\n",
+      " |-- _type: string (nullable = true)\n",
+      " |-- batters: struct (nullable = true)\n",
+      " |    |-- batter: array (nullable = true)\n",
+      " |    |    |-- element: struct (containsNull = true)\n",
+      " |    |    |    |-- _VALUE: string (nullable = true)\n",
+      " |    |    |    |-- _id: long (nullable = true)\n",
+      " |-- fillings: struct (nullable = true)\n",
+      " |    |-- filling: array (nullable = true)\n",
+      " |    |    |-- element: struct (containsNull = true)\n",
+      " |    |    |    |-- _id: long (nullable = true)\n",
+      " |    |    |    |-- addcost: double (nullable = true)\n",
+      " |    |    |    |-- name: string (nullable = true)\n",
+      " |-- name: string (nullable = true)\n",
+      " |-- ppu: double (nullable = true)\n",
+      " |-- topping: array (nullable = true)\n",
+      " |    |-- element: struct (containsNull = true)\n",
+      " |    |    |-- _VALUE: string (nullable = true)\n",
+      " |    |    |-- _id: long (nullable = true)"
+     ]
+    }
+   ],
+   "source": [
+    "spark_df.printSchema()"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 28,
+   "metadata": {},
+   "outputs": [
+    {
+     "name": "stdout",
+     "output_type": "stream",
+     "text": [
+      "+---+------+-------------------+--------------------+----------+----+--------------------+\n",
+      "|_id| _type|            batters|            fillings|      name| ppu|             topping|\n",
+      "+---+------+-------------------+--------------------+----------+----+--------------------+\n",
+      "|  1| donut|     [Regular,1001]|                null|      Cake|0.55|[[None,5001], [Gl...|\n",
+      "|  1| donut|   [Chocolate,1002]|                null|      Cake|0.55|[[None,5001], [Gl...|\n",
+      "|  1| donut|   [Blueberry,1003]|                null|      Cake|0.55|[[None,5001], [Gl...|\n",
+      "|  1| donut|[Devil's Food,1003]|                null|      Cake|0.55|[[None,5001], [Gl...|\n",
+      "|  2| donut|     [Regular,1001]|                null|    Raised|0.55|[[None,5001], [Gl...|\n",
+      "|  3| donut|     [Regular,1001]|                null|Buttermilk|0.55|                null|\n",
+      "|  3| donut|   [Chocolate,1002]|                null|Buttermilk|0.55|                null|\n",
+      "|  4|   bar|     [Regular,1001]|[WrappedArray([70...|       Bar|0.75|[[Chocolate,5003]...|\n",
+      "|  5| twist|     [Regular,1001]|                null|     Twist|0.65|[[Glazed,5002], [...|\n",
+      "|  6|filled|     [Regular,1001]|[WrappedArray([70...|    Filled|0.75|[[Glazed,5002], [...|\n",
+      "+---+------+-------------------+--------------------+----------+----+--------------------+"
+     ]
+    }
+   ],
+   "source": [
+    "spark_df.withColumn('batters', explode(col('batters')['batter'])).show()"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 29,
+   "metadata": {},
+   "outputs": [
+    {
+     "name": "stdout",
+     "output_type": "stream",
+     "text": [
+      "['_id', '_type', 'batters', 'fillings', 'name', 'ppu', 'topping']"
+     ]
+    }
+   ],
+   "source": [
+    "spark_df.schema.names"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 30,
+   "metadata": {},
+   "outputs": [
+    {
+     "name": "stdout",
+     "output_type": "stream",
+     "text": [
+      "('batters', 'struct<batter:array<struct<_VALUE:string,_id:bigint>>>')"
+     ]
+    }
+   ],
+   "source": [
+    "spark_df.dtypes[spark_df.schema.names.index('batters')]"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 3,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "s3_staging_path = \"s3://aws-glue-elif-test/temp\""
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 6,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "r0 = Relationalize.apply(frame = d0, \n",
+    "                         staging_path= s3_staging_path, \n",
+    "                         name='root',\n",
+    "                         options=None, \n",
+    "                         transformation_ctx = \"r0\")"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 7,
+   "metadata": {},
+   "outputs": [
+    {
+     "name": "stdout",
+     "output_type": "stream",
+     "text": [
+      "[u'root_topping', u'root_batters.batter.array', u'root', u'root_fillings.filling']"
+     ]
+    }
+   ],
+   "source": [
+    "r0.keys()"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 9,
+   "metadata": {},
+   "outputs": [
+    {
+     "name": "stdout",
+     "output_type": "stream",
+     "text": [
+      "+---+-----+------------------------+-----------------------------------+-------------------------+--------------------------------+\n",
+      "| id|index|fillings.filling.val._id|fillings.filling.val.addcost.double|fillings.filling.val.name|fillings.filling.val.addcost.int|\n",
+      "+---+-----+------------------------+-----------------------------------+-------------------------+--------------------------------+\n",
+      "|  1|    0|                    7001|                                0.0|                     None|                            null|\n",
+      "|  1|    1|                    7002|                               0.25|                  Custard|                            null|\n",
+      "|  1|    2|                    7003|                               0.25|            Whipped Cream|                            null|\n",
+      "|  2|    0|                    7002|                               null|                  Custard|                               0|\n",
+      "|  2|    1|                    7003|                               null|            Whipped Cream|                               0|\n",
+      "|  2|    2|                    7004|                               null|         Strawberry Jelly|                               0|\n",
+      "|  2|    3|                    7005|                               null|           Rasberry Jelly|                               0|\n",
+      "+---+-----+------------------------+-----------------------------------+-------------------------+--------------------------------+"
+     ]
+    }
+   ],
+   "source": [
+    "r0.select('root_fillings.filling').toDF().show()"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 10,
+   "metadata": {},
+   "outputs": [
+    {
+     "name": "stdout",
+     "output_type": "stream",
+     "text": [
+      "+---+------+----------------------------+-------------------------+--------------------+----------+----+-------+----------------+\n",
+      "|_id| _type|batters.batter.struct._VALUE|batters.batter.struct._id|batters.batter.array|      name| ppu|topping|fillings.filling|\n",
+      "+---+------+----------------------------+-------------------------+--------------------+----------+----+-------+----------------+\n",
+      "|  1| donut|                        null|                     null|                   1|      Cake|0.55|      1|            null|\n",
+      "|  2| donut|                     Regular|                     1001|                null|    Raised|0.55|      2|            null|\n",
+      "|  3| donut|                        null|                     null|                   2|Buttermilk|0.55|   null|            null|\n",
+      "|  4|   bar|                     Regular|                     1001|                null|       Bar|0.75|      3|               1|\n",
+      "|  5| twist|                     Regular|                     1001|                null|     Twist|0.65|      4|            null|\n",
+      "|  6|filled|                     Regular|                     1001|                null|    Filled|0.75|      5|               2|\n",
+      "+---+------+----------------------------+-------------------------+--------------------+----------+----+-------+----------------+"
+     ]
+    }
+   ],
+   "source": [
+    "r0.select('root').toDF().show()"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 11,
+   "metadata": {},
+   "outputs": [
+    {
+     "name": "stdout",
+     "output_type": "stream",
+     "text": [
+      "+---+-----+-------------------------------+----------------------------+\n",
+      "| id|index|batters.batter.array.val._VALUE|batters.batter.array.val._id|\n",
+      "+---+-----+-------------------------------+----------------------------+\n",
+      "|  1|    0|                        Regular|                        1001|\n",
+      "|  1|    1|                      Chocolate|                        1002|\n",
+      "|  1|    2|                      Blueberry|                        1003|\n",
+      "|  1|    3|                   Devil's Food|                        1003|\n",
+      "|  2|    0|                        Regular|                        1001|\n",
+      "|  2|    1|                      Chocolate|                        1002|\n",
+      "+---+-----+-------------------------------+----------------------------+"
+     ]
+    }
+   ],
+   "source": [
+    "r0.select('root_batters.batter.array').toDF().show()"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 19,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "un0 = UnnestFrame.apply(frame = d0, transformation_ctx = \"un0\")"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 20,
+   "metadata": {},
+   "outputs": [
+    {
+     "name": "stdout",
+     "output_type": "stream",
+     "text": [
+      "root\n",
+      " |-- _id: integer (nullable = true)\n",
+      " |-- _type: string (nullable = true)\n",
+      " |-- batters.batter._VALUE: string (nullable = true)\n",
+      " |-- batters.batter._id: integer (nullable = true)\n",
+      " |-- fillings.filling: array (nullable = true)\n",
+      " |    |-- element: struct (containsNull = true)\n",
+      " |    |    |-- fillings.filling.val._id: integer (nullable = true)\n",
+      " |    |    |-- fillings.filling.val.addcost: struct (nullable = true)\n",
+      " |    |    |    |-- double: double (nullable = true)\n",
+      " |    |    |    |-- int: integer (nullable = true)\n",
+      " |    |    |-- fillings.filling.val.name: string (nullable = true)\n",
+      " |-- name: string (nullable = true)\n",
+      " |-- ppu: double (nullable = true)\n",
+      " |-- topping: array (nullable = true)\n",
+      " |    |-- element: struct (containsNull = true)\n",
+      " |    |    |-- topping.val._VALUE: string (nullable = true)\n",
+      " |    |    |-- topping.val._id: integer (nullable = true)\n",
+      " |-- batters.batter: array (nullable = true)\n",
+      " |    |-- element: struct (containsNull = true)\n",
+      " |    |    |-- batters.batter.val._VALUE: string (nullable = true)\n",
+      " |    |    |-- batters.batter.val._id: integer (nullable = true)"
+     ]
+    }
+   ],
+   "source": [
+    "un0.toDF().printSchema()"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 21,
+   "metadata": {},
+   "outputs": [
+    {
+     "name": "stdout",
+     "output_type": "stream",
+     "text": [
+      "+---+------+---------------------+------------------+--------------------+----------+----+--------------------+--------------------+\n",
+      "|_id| _type|batters.batter._VALUE|batters.batter._id|    fillings.filling|      name| ppu|             topping|      batters.batter|\n",
+      "+---+------+---------------------+------------------+--------------------+----------+----+--------------------+--------------------+\n",
+      "|  1| donut|                 null|              null|                null|      Cake|0.55|[[None,5001], [Gl...|[[Regular,1001], ...|\n",
+      "|  2| donut|              Regular|              1001|                null|    Raised|0.55|[[None,5001], [Gl...|                null|\n",
+      "|  3| donut|                 null|              null|                null|Buttermilk|0.55|                null|[[Regular,1001], ...|\n",
+      "|  4|   bar|              Regular|              1001|[[7001,[0.0,null]...|       Bar|0.75|[[Chocolate,5003]...|                null|\n",
+      "|  5| twist|              Regular|              1001|                null|     Twist|0.65|[[Glazed,5002], [...|                null|\n",
+      "|  6|filled|              Regular|              1001|[[7002,[null,0],C...|    Filled|0.75|[[Glazed,5002], [...|                null|\n",
+      "+---+------+---------------------+------------------+--------------------+----------+----+--------------------+--------------------+"
+     ]
+    }
+   ],
+   "source": [
+    "un0.toDF().show()"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {},
+   "outputs": [],
+   "source": []
+  }
+ ],
+ "metadata": {
+  "kernelspec": {
+   "display_name": "Sparkmagic (PySpark)",
+   "language": "",
+   "name": "pysparkkernel"
+  },
+  "language_info": {
+   "codemirror_mode": {
+    "name": "python",
+    "version": 2
+   },
+   "mimetype": "text/x-python",
+   "name": "pyspark",
+   "pygments_lexer": "python2"
+  }
+ },
+ "nbformat": 4,
+ "nbformat_minor": 2
+}
